@@ -1,6 +1,6 @@
 AI FAQ Processing API (FOR TESTING AZURE SERVICES PURPOSE)
 
-This document provides an overview of the architecture, workflow, and endpoints implemented in the AllController class. 
+This document provides an overview of the architecture, workflow, and endpoints implemented in this .NET project. 
 The API processes uploaded PDFs, splits them into pages, extracts content using Azure Document Intelligence, and generates Q&A pairs using Azure OpenAI.
 
 The API performs the following major tasks:
