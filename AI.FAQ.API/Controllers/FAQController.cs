@@ -1,4 +1,4 @@
-using AI.FAQ.API.DataModel;
+ï»¿using AI.FAQ.API.DataModel;
 using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.AI.OpenAI;
@@ -18,7 +18,7 @@ namespace AI.FAQ.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AllController : ControllerBase
+    public class FAQController : ControllerBase
     {
         private readonly IConfiguration _config;
         private readonly IWebHostEnvironment _env;
@@ -58,7 +58,7 @@ namespace AI.FAQ.API.Controllers
 
         private readonly int batchSize = 5;
 
-        public AllController(IConfiguration config, IWebHostEnvironment env)
+        public FAQController(IConfiguration config, IWebHostEnvironment env)
         {
             _config = config;
             _env = env;
@@ -246,7 +246,7 @@ namespace AI.FAQ.API.Controllers
                         string imageDir = Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", folderName + "_images");
                         Directory.CreateDirectory(imageDir);
 
-                        using var pageImage = RenderPdfToImage(ms); 
+                        using var pageImage = RenderPdfToImage(ms);
 
                         foreach (var page in result.Value.Pages)
                         {
@@ -301,7 +301,7 @@ namespace AI.FAQ.API.Controllers
         }
 
         // ---------------------------
-        // Helper: Convert polygon ¡ú crop ¡ú save
+        // Helper: Convert polygon â†’ crop â†’ save
         // ---------------------------
         private static void CropAndSave(SKBitmap pageBmp, IReadOnlyList<float> polygon,
             float scaleX, float scaleY, string outPath)
