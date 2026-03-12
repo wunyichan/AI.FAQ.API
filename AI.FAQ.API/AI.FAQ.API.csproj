@@ -26,8 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Data\diResult\" />
     <Folder Include="Logs\" />
-    <Folder Include="Services\" />
   </ItemGroup>
 
 </Project>

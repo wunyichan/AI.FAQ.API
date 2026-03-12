@@ -243,40 +243,44 @@ namespace AI.FAQ.API.Controllers
                         // --- AFTER SAVING JSON ---
 
                         // Define your target directory for images
-                        string imageDir = Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", folderName + "_images");
-                        Directory.CreateDirectory(imageDir);
+                        string imageDir = Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", folderName + "_images", $"page-{pageNum}");
 
-                        using var pageImage = RenderPdfToImage(ms);
-
-                        foreach (var page in result.Value.Pages)
+                        if (result.Value.Tables.Count > 0 || result.Value.Figures.Count > 0)
                         {
-                            float pageW = page.Width ?? 0.0f;
-                            float pageH = page.Height ?? 0.0f;
+                            Directory.CreateDirectory(imageDir);
 
-                            float scaleX = pageImage.Width / pageW;
-                            float scaleY = pageImage.Height / pageH;
+                            using var pageImage = RenderPdfToImage(ms);
 
-                            // ---- TABLES ----
-                            int tIndex = 0;
-                            foreach (var table in result.Value.Tables)
+                            foreach (var page in result.Value.Pages)
                             {
-                                var region = table.BoundingRegions.First();
-                                CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
-                                    Path.Combine(imageDir, $"page-{pageNum}", $"table_{tIndex}.png"));
-                                tIndex++;
+                                float pageW = page.Width ?? 0.0f;
+                                float pageH = page.Height ?? 0.0f;
+
+                                float scaleX = pageImage.Width / pageW;
+                                float scaleY = pageImage.Height / pageH;
+
+                                // ---- TABLES ----
+                                int tIndex = 1;
+                                foreach (var table in result.Value.Tables)
+                                {
+                                    var region = table.BoundingRegions.First();
+                                    CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
+                                        Path.Combine(imageDir, $"table_{tIndex}.png"));
+                                    tIndex++;
+                                }
+
+                                // ---- FIGURES ----
+                                int fIndex = 1;
+                                foreach (var fig in result.Value.Figures)
+                                {
+                                    var region = fig.BoundingRegions.First();
+                                    CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
+                                        Path.Combine(imageDir, $"figure_{fIndex}.png"));
+                                    fIndex++;
+                                }
                             }
 
-                            // ---- FIGURES ----
-                            int fIndex = 0;
-                            foreach (var fig in result.Value.Figures)
-                            {
-                                var region = fig.BoundingRegions.First();
-                                CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
-                                    Path.Combine(imageDir, $"page-{pageNum}", $"figure_{fIndex}.png"));
-                                fIndex++;
-                            }
                         }
-
 
                         string extractedText = result.Value.Content ?? string.Empty;
                         pages.Add((pageNum, extractedText));
