@@ -403,14 +403,7 @@ namespace AI.FAQ.API.Controllers
 
                     Page myPage = Page.FromJson(jsonContent);
 
-                    allPages.Add(new
-                    {
-                        fileName = Path.GetFileNameWithoutExtension(filePath),
-                        pageNo = ExtractPageNumber(filePath),
-                        content = myPage?.Value?.Content,
-                        figures = myPage?.Value?.Figures?.Length,
-                        tables = myPage?.Value?.Tables?.Length
-                    });
+                    int pageNum = ExtractPageNumber(filePath);
 
                     if (myPage?.Value?.Figures?.Length > 0 || myPage?.Value?.Tables?.Length > 0)
                     {
@@ -422,6 +415,83 @@ namespace AI.FAQ.API.Controllers
                             tables = myPage?.Value?.Tables?.Length
                         });
                     }
+
+                    List<object> figures = new List<object>();
+                    List<object> tables = new List<object>();
+
+                    if (myPage?.Value?.Figures?.Length > 0)
+                    {
+                        string imageDirectoryPath = Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", targetFile + "_images", $"page-{pageNum}");
+                        if (Directory.Exists(imageDirectoryPath))
+                        {
+                            string[] _imgFiles = Directory.GetFiles(imageDirectoryPath, $"figure_*.png");
+
+                            foreach (string imgPath in _imgFiles)
+                            {
+                                try
+                                {
+                                    // 1. Read file to binary
+                                    byte[] fileBytes = System.IO.File.ReadAllBytes(filePath);
+
+                                    // 2. Convert binary to Base64 string
+                                    string base64String = Convert.ToBase64String(fileBytes);
+
+                                    figures.Add(new
+                                    {
+                                        caption = Path.GetFileNameWithoutExtension(imgPath),
+                                        path = imgPath,
+                                        data_image = $"data:image/png;base64,{base64String}"
+                                    });
+                                }
+                                catch (IOException ex)
+                                {
+                                }
+                            }
+                        }
+                    }
+
+                    if (myPage?.Value?.Tables?.Length > 0)
+                    {
+                        string imageDirectoryPath = Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", targetFile + "_images", $"page-{pageNum}");
+                        if (Directory.Exists(imageDirectoryPath))
+                        {
+                            string[] _tableFiles = Directory.GetFiles(imageDirectoryPath, $"table_*.png");
+
+                            foreach (string tablePath in _tableFiles)
+                            {
+                                try
+                                {
+                                    // 1. Read file to binary
+                                    byte[] fileBytes = System.IO.File.ReadAllBytes(filePath);
+
+                                    // 2. Convert binary to Base64 string
+                                    string base64String = Convert.ToBase64String(fileBytes);
+
+                                    tables.Add(new
+                                    {
+                                        caption = Path.GetFileNameWithoutExtension(tablePath),
+                                        path = tablePath,
+                                        data_image = $"data:image/png;base64,{base64String}"
+                                    });
+                                }
+                                catch (IOException ex)
+                                {
+                                }
+                            }
+                        }
+                    }
+
+                    allPages.Add(new
+                    {
+                        fileName = Path.GetFileNameWithoutExtension(filePath),
+                        pageNo = ExtractPageNumber(filePath),
+                        content = myPage?.Value?.Content,
+                        figure_count = myPage?.Value?.Figures?.Length,
+                        table_count = myPage?.Value?.Tables?.Length,
+                        figures,
+                        tables
+                    });
+
                 }
 
 
@@ -469,15 +539,22 @@ namespace AI.FAQ.API.Controllers
             return 0; // Default if parsing fails
         }
 
-        [HttpGet("3.5/read-all-pages")]
-        public async Task<IActionResult> ReadAllPageData()
+        [HttpGet("3.5/test-read")]
+        public async Task<IActionResult> TestRead()
         {
+            // Load data.json from /Data folder
             string jsonPath = Path.Combine(_env.ContentRootPath, "Data", "all_pages_data.json");
+
             if (!System.IO.File.Exists(jsonPath))
                 return NotFound("all_pages_data.json not found.");
             string json = await System.IO.File.ReadAllTextAsync(jsonPath);
+
+            // Deserialize into model
             var data = JsonSerializer.Deserialize<AllPageInfo[]>(json);
-            return Ok(data);
+            if (data == null || data.Length == 0)
+                return BadRequest("No pages found.");
+
+            return Ok(data.OrderBy(p => p.PageNo).ToList());
         }
 
         [HttpGet("4/open-ai-generate-qa")]

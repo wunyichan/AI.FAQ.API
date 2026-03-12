@@ -9,44 +9,34 @@ namespace AI.FAQ.API.DataModel
 
         [JsonPropertyName("pageNo")]
         public int PageNo { get; set; }
+
         [JsonPropertyName("content")]
         public string? Content { get; set; }
+
+        [JsonPropertyName("figure_count")]
+        public int FigureCount { get; set; }
+
+        [JsonPropertyName("table_count")]  
+        public int TableCount { get; set; }
+
         [JsonPropertyName("figures")]
-        public int Figures { get; set; }
-        [JsonPropertyName("tables")]  
-        public int Tables { get; set; }
+        public List<FigureInfo>? Figures { get; set; }
+
+        [JsonPropertyName("tables")]
+        public List<TableInfo>? Tables { get; set; }
     }
 
-    public class RootData
+    public class FigureInfo
     {
-        [JsonPropertyName("folder")]
-        public FolderInfo? Folder { get; set; }
-
-        [JsonPropertyName("pages")]
-        public List<PageInfo>? Pages { get; set; }
+        public string? caption { get; set; }
+        public string? path { get; set; }
+        public string? data_image { get; set; }
     }
 
-    public class FolderInfo
+    public class TableInfo
     {
-        [JsonPropertyName("prefix")]
-        public string? Prefix { get; set; }
-
-        [JsonPropertyName("blob")]
-        public object? Blob { get; set; }
-
-        [JsonPropertyName("isPrefix")]
-        public bool IsPrefix { get; set; }
-
-        [JsonPropertyName("isBlob")]
-        public bool IsBlob { get; set; }
-    }
-
-    public class PageInfo
-    {
-        [JsonPropertyName("page")]
-        public int Page { get; set; }
-
-        [JsonPropertyName("extractedText")]
-        public string? ExtractedText { get; set; }
+        public string? caption { get; set; }
+        public string? path { get; set; }
+        public string? data_image { get; set; }
     }
 }
