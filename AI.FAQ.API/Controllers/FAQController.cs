@@ -112,11 +112,10 @@ namespace AI.FAQ.API.Controllers
             }
             // 2. Load PDF into memory
             PdfDocument inputPdf;
-            using (var ms = new MemoryStream())
-            {
-                await uploadBlob.DownloadToAsync(ms); ms.Position = 0;
-                inputPdf = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
-            }
+            using var ms = new MemoryStream();
+            await uploadBlob.DownloadToAsync(ms); ms.Position = 0;
+            inputPdf = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
+
             // 3. Split pages and upload to pdfsplits/{filename}/
             for (int i = 0; i < inputPdf.PageCount; i++)
             {
@@ -126,7 +125,13 @@ namespace AI.FAQ.API.Controllers
                 outStream.Position = 0;
                 var pageBlob = splitsContainer.GetBlobClient($"{fileName}/page-{i + 1}.pdf");
                 await pageBlob.UploadAsync(outStream, overwrite: true);
+
+                outputPdf.Dispose();
             }
+
+            inputPdf.Dispose();
+            ms.Dispose();
+
             return Ok(new
             {
                 message = "PDF uploaded and split successfully.",
@@ -156,16 +161,6 @@ namespace AI.FAQ.API.Controllers
             var container = GetBlobServiceClientSafe(_blobService, _config["AzureBlobStorage:SplitContainerName"] ?? "pdfsplits");
             var results = new List<object>();
 
-            // Guard the platform-specific call with a runtime OS check to avoid CA1416.
-            // Supported platforms per the Conversion API: Windows, Linux, macOS, MacCatalyst, Android, iOS.
-            bool platformSupported =
-                OperatingSystem.IsWindows() ||
-                OperatingSystem.IsLinux() ||
-                OperatingSystem.IsMacOS() ||
-                (OperatingSystem.IsMacCatalyst()) ||
-                OperatingSystem.IsAndroid() ||
-                OperatingSystem.IsIOS();
-
             await foreach (var folder in container.GetBlobsByHierarchyAsync(BlobTraits.None, BlobStates.None, "/", prefix: null, cancellationToken: HttpContext.RequestAborted))
             {
                 if (!folder.IsPrefix) continue;
@@ -185,27 +180,27 @@ namespace AI.FAQ.API.Controllers
                     {
                         var blobClient = container.GetBlobClient(blobName);
 
-                        #region Generate SAS URL (valid 30 min)
+                        #region Generate SAS URL (valid 30 min) - OPTIONAL: You can use this SAS URL approach if you want Document Intelligence to fetch the blob directly, instead of downloading it into memory and sending bytes.
 
-                        var sasBuilder = new BlobSasBuilder
-                        {
-                            BlobContainerName = container.Name,
-                            BlobName = blobName,
-                            Resource = "b",
-                            ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(30)
-                        };
+                        //var sasBuilder = new BlobSasBuilder
+                        //{
+                        //    BlobContainerName = container.Name,
+                        //    BlobName = blobName,
+                        //    Resource = "b",
+                        //    ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(30)
+                        //};
 
-                        sasBuilder.SetPermissions(BlobSasPermissions.Read);
+                        //sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-                        var sasUri = blobClient.GenerateSasUri(sasBuilder);
+                        //var sasUri = blobClient.GenerateSasUri(sasBuilder);
+
+                        #endregion
 
                         // Download blob into a MemoryStream so we can send it to Document Intelligence
                         using var ms = new MemoryStream();
                         await blobClient.DownloadToAsync(ms, cancellationToken: HttpContext.RequestAborted);
                         //what is the purpose of setting the position to 0 after downloading the blob into the MemoryStream?
                         ms.Position = 0;
-
-                        #endregion
 
                         // The SDK's AnalyzeDocument APIs accept the document bytes directly.
                         var document = BinaryData.FromStream(ms);
@@ -220,6 +215,8 @@ namespace AI.FAQ.API.Controllers
                             options,
                             cancellationToken: HttpContext.RequestAborted
                         );
+
+                        ms.Dispose();
 
                         #region Save the result as JSON
 

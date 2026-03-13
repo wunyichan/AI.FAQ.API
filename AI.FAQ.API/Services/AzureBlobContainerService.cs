@@ -1,5 +1,12 @@
 ﻿using AI.FAQ.API.DataModel;
+using Azure;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using Azure.Storage.Sas;
+using Microsoft.AspNetCore.Http;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using UglyToad.PdfPig.Actions;
 
 namespace AI.FAQ.API.Services
 {
@@ -7,37 +14,42 @@ namespace AI.FAQ.API.Services
     {
         private readonly BlobServiceClient _blobService;
 
-        public AzureBlobContainerService(string? blobStorageConnectionString)
+        public AzureBlobContainerService(string blobStorageConnectionString)
         {
-            if (string.IsNullOrWhiteSpace(blobStorageConnectionString))
-            {
-                throw new ArgumentException("Connection string cannot be null, empty, or whitespace.", nameof(blobStorageConnectionString));
-            }
-
             _blobService = new BlobServiceClient(blobStorageConnectionString);
         }
 
-        public BlobServiceClient GetBlobServiceClient()
-        {
-            return _blobService;
-        }
-
-        public async Task<BlobContainerClient> GetBlobContainerClient(string containerName)
+        public async Task<BlobContainerClient> GetBlobContainerClient(string containerName, bool checkCreateIfNotExists = false)
         {
             var containerClient = _blobService.GetBlobContainerClient(containerName);
-            await containerClient.CreateIfNotExistsAsync();
+
+            if (checkCreateIfNotExists)
+                await containerClient.CreateIfNotExistsAsync();
+
             return containerClient;
         }
 
-        public async Task<BooleanResult> UploadBlobAsync(string containerName, string newUploadFileName, IFormFile file)
+        public async Task<BooleanResult> UploadBlobAsync(string containerName, string newUploadBlobName, IFormFile? file = null, Stream? stream = null)
         {
-            var containerClient = await GetBlobContainerClient(containerName);
-            var blobClient = containerClient.GetBlobClient(newUploadFileName);
+            if (file == null && stream == null)
+            {
+                return new BooleanResult(false, "Either file or stream must be provided.");
+            }
+
+            var containerClient = await GetBlobContainerClient(containerName, true);
+            var blobClient = containerClient.GetBlobClient(newUploadBlobName);
             try
             {
-                using (var content = file.OpenReadStream())
+                if (stream != null)
                 {
-                    await blobClient.UploadAsync(content, overwrite: true);
+                    await blobClient.UploadAsync(stream, overwrite: true);
+                }
+                else if (file != null)
+                {
+                    using (var content = file.OpenReadStream())
+                    {
+                        await blobClient.UploadAsync(content, overwrite: true);
+                    }
                 }
             }
             catch (Exception ex)
@@ -77,5 +89,41 @@ namespace AI.FAQ.API.Services
             }
         }
 
+        public async IAsyncEnumerable<BlobHierarchyItem> GetContainerFolderBlobItemsAsync(string containerName, string? prefix = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var containerClient = await GetBlobContainerClient(containerName);
+
+            var resultSegments = containerClient.GetBlobsByHierarchyAsync(
+                BlobTraits.None,
+                BlobStates.None,
+                "/",
+                prefix: prefix,
+                cancellationToken: cancellationToken);
+
+            await foreach (var item in resultSegments)
+            {
+                yield return item;
+            }
+        }
+
+        public async Task<Uri> GetSASUri(string containerName, string blobName, int timeInMinutes)
+        {
+            var containerClient = await GetBlobContainerClient(containerName);
+            var blobClient = containerClient.GetBlobClient(blobName);
+
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = containerClient.Name,
+                BlobName = blobName,
+                Resource = "b",
+                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(timeInMinutes)
+            };
+
+            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+            var sasUri = blobClient.GenerateSasUri(sasBuilder);
+
+            return sasUri;
+        }
     }
 }
