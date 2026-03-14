@@ -1,4 +1,5 @@
 ﻿using AI.FAQ.API.DataModel;
+using System.Text.Json;
 
 namespace AI.FAQ.API.Services
 {
@@ -17,6 +18,21 @@ namespace AI.FAQ.API.Services
             { ".zip", new byte[] { 0x50, 0x4B, 0x03, 0x04 } },
             { ".7z", new byte[] { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C } }
         };
+
+        public static string GenerateNewFileName()
+        {
+            string date = DateTime.Now.ToString("yyyyMMddhhmmss"); // Malaysia local time
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            var random = new Random();
+
+            string randomPart = new string(
+                Enumerable.Repeat(chars, 5)
+                .Select(s => s[random.Next(s.Length)])
+                .ToArray()
+            );
+
+            return $"{date}_{randomPart}.pdf";
+        }
 
         public static BooleanResult CheckFileRequirement(IFormFile file, int sizeInMB, string[] allowedFileExtensions)
         {
@@ -45,19 +61,25 @@ namespace AI.FAQ.API.Services
             return new BooleanResult(true);
         }
 
-        public static string GenerateNewFileName()
+        public static async Task<BooleanResult> SaveAsJSONFile(string directoryPath, string fileName, object data)
         {
-            string date = DateTime.Now.ToString("yyyyMMddhhmmss"); // Malaysia local time
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            var random = new Random();
+            try
+            {
+                if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    fileName = $"{fileName}.json";
 
-            string randomPart = new string(
-                Enumerable.Repeat(chars, 5)
-                .Select(s => s[random.Next(s.Length)])
-                .ToArray()
-            );
+                if (!Directory.Exists(directoryPath))
+                    Directory.CreateDirectory(directoryPath);
 
-            return $"{date}_{randomPart}.pdf";
+                string finalJson = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(Path.Combine(directoryPath, fileName), finalJson);
+
+                return new BooleanResult(true);
+            }
+            catch (Exception ex)
+            {
+                return new BooleanResult(false, $"Error saving JSON file: {ex.Message}");
+            }
         }
     }
 }
