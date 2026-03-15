@@ -1,4 +1,5 @@
 ﻿using AI.FAQ.API.DataModel;
+using System.Text;
 using System.Text.Json;
 
 namespace AI.FAQ.API.Services
@@ -59,6 +60,24 @@ namespace AI.FAQ.API.Services
             }
 
             return new BooleanResult(true);
+        }
+
+        public static async Task<string> GetFileJSONContent(string filePath)
+        {
+            try
+            {
+                if (!filePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    throw new Exception(filePath + " is not a JSON file. ");
+
+                if (!File.Exists(filePath))
+                    throw new FileNotFoundException("File Not Found. ");
+
+                return await File.ReadAllTextAsync(filePath);
+            }
+            catch
+            {
+                throw new FileNotFoundException("File Not Found. ");
+            }
         }
 
         public static async Task<BooleanResult> SaveAsJSONFile(string directoryPath, string fileName, object data)

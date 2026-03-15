@@ -1,11 +1,12 @@
-﻿using SkiaSharp;
+﻿using Azure.AI.DocumentIntelligence;
+using SkiaSharp;
 using UglyToad.PdfPig.Rendering.Skia;
 
 namespace AI.FAQ.API.Services
 {
     public static class CropPDFImageService
     {
-        public static SkiaSharp.SKBitmap RenderPdfToImage(Stream pdfStream)
+        public static SKBitmap RenderPdfToImage(Stream pdfStream)
         {
             pdfStream.Position = 0; // Ensure stream is at the beginning
             if (!pdfStream.CanSeek)
@@ -32,6 +33,16 @@ namespace AI.FAQ.API.Services
             return bitmap.Copy();
         }
 
+        public static (float scaleX, float scaleY) CalculateScaleFactors(SKBitmap pageImage, DocumentPage page)
+        {
+            float pageW = page.Width ?? 0.0f;
+            float pageH = page.Height ?? 0.0f;
+
+            float scaleX = pageImage.Width / pageW;
+            float scaleY = pageImage.Height / pageH;
+            return (scaleX, scaleY);
+        }
+
         public static void CropAndSave(SKBitmap pageBmp, IReadOnlyList<float> polygon,
            float scaleX, float scaleY, string outPath)
         {
@@ -49,7 +60,7 @@ namespace AI.FAQ.API.Services
 
             using var img = SKImage.FromBitmap(subset);
             using var data = img.Encode(SKEncodedImageFormat.Png, 100);
-            using var fs = System.IO.File.OpenWrite(outPath);
+            using var fs = File.OpenWrite(outPath);
             data.SaveTo(fs);
         }
 

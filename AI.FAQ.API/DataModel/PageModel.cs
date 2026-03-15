@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using System.Text.Json.Serialization;
 
 namespace AI.FAQ.API.DataModel
@@ -24,6 +25,20 @@ namespace AI.FAQ.API.DataModel
 
         [JsonPropertyName("tables")]
         public List<TableInfo>? Tables { get; set; }
+
+        public static AllPageInfo FromJson(string json)
+        {
+            // Deserialize and ensure non-null result; throw if deserialization produced null.
+            return JsonConvert.DeserializeObject<AllPageInfo>(json!, Converter.Settings)
+                   ?? throw new JsonSerializationException("Failed to deserialize JSON into Page: result was null.");
+        }
+
+        public static AllPageInfo[] FromJsonArray(string json)
+        {
+            // Deserialize and ensure non-null result; throw if deserialization produced null.
+            return JsonConvert.DeserializeObject<AllPageInfo[]>(json!, Converter.Settings)
+                   ?? throw new JsonSerializationException("Failed to deserialize JSON into Page: result was null.");
+        }
     }
 
     public class FigureInfo
