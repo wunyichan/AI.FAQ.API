@@ -362,6 +362,13 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
+# Data files
 Data/
 Logs/
 appsettings.json
+
+# Temp cs for restructuring uses
+Controllers/NewController.cs
+Controllers/OldController.cs
+/AI.FAQ.API/Controllers/OldController.cs
+/AI.FAQ.API/Controllers/NewController.cs
