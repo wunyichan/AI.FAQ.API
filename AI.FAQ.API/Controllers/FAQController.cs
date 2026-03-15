@@ -56,7 +56,8 @@ namespace AI.FAQ.API.Controllers
             _config = config;
             _env = env;
 
-            azureBlobContainerService = new AzureBlobContainerService(ConfigService.GetConfigValue(config, "AzureBlobStorage:ConnectionString"));
+            azureBlobContainerService = new AzureBlobContainerService(
+                ConfigService.GetConfigValue(config, "AzureBlobStorage:ConnectionString"));
 
             azureDocumentIntelligenceService = new AzureDocumentIntelligenceService(
                 ConfigService.GetConfigValue(config, "DocumentIntelligence:Endpoint"),
@@ -72,10 +73,10 @@ namespace AI.FAQ.API.Controllers
         {
             #region Check File Requirements
 
-            BooleanResult booleanResult = FileService.CheckFileRequirement(file, 20, new string[] { ".pdf" });
-            if (!booleanResult.Result)
+            var (check, checkError) = FileService.CheckFileRequirement(file, 20, new string[] { ".pdf" });
+            if (!check)
             {
-                return BadRequest(booleanResult.Message);
+                return BadRequest(checkError);
             }
 
             #endregion
@@ -86,11 +87,11 @@ namespace AI.FAQ.API.Controllers
             #region Upload the original PDF to the uploads container (keeps a copy of the original)
 
             string newFileName = FileService.GenerateNewFileName();
-            BooleanResult uploadResult = await azureBlobContainerService.UploadBlobAsync(_uploadsContainerName, newFileName, file: file);
+            var (uploadPDF, uploadPDFError) = await azureBlobContainerService.UploadBlobAsync(_uploadsContainerName, newFileName, file: file);
 
-            if (!uploadResult.Result)
+            if (!uploadPDF)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, uploadResult.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, uploadPDFError);
             }
 
             #endregion
@@ -98,9 +99,13 @@ namespace AI.FAQ.API.Controllers
             #region Download the PDF back from the uploads container and split into individual pages, saving each page as a separate PDF in the splits container
 
             using var ms = new MemoryStream();
-            PdfDocument inputPdf;
-            await azureBlobContainerService.DownloadBlobAsync(_uploadsContainerName, newFileName, ms);
-            inputPdf = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
+            var (download, downloadError) = await azureBlobContainerService.DownloadBlobAsync(_uploadsContainerName, newFileName, ms);
+            if (!download)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, downloadError);
+            }
+
+            PdfDocument inputPdf = PdfReader.Open(ms, PdfDocumentOpenMode.Import);
 
             var fileName = Path.GetFileNameWithoutExtension(newFileName);
             for (int ctr = 0; ctr < inputPdf.PageCount; ctr++)
@@ -112,10 +117,10 @@ namespace AI.FAQ.API.Controllers
                 outputPdf.Save(outStream);
                 outStream.Position = 0;
 
-                BooleanResult uploadPageResult = await azureBlobContainerService.UploadBlobAsync(_splitsContainerName, $"{fileName}/page-{ctr + 1}.pdf", stream: outStream);
-                if (!uploadPageResult.Result)
+                var (uploadPage, uploadPageError) = await azureBlobContainerService.UploadBlobAsync(_splitsContainerName, $"{fileName}/page-{ctr + 1}.pdf", stream: outStream);
+                if (!uploadPage)
                 {
-                    return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to upload page {ctr + 1}: {uploadPageResult.Message}");
+                    return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to upload page {ctr + 1}: {uploadPageError}");
                 }
             }
 
@@ -152,15 +157,19 @@ namespace AI.FAQ.API.Controllers
                     if (parts.Length == 2 && int.TryParse(parts[1], out int pageNum))
                     {
                         using var ms = new MemoryStream();
-                        await azureBlobContainerService.DownloadBlobAsync(containerName, blobName, ms);
+                        var (download, downloadError) = await azureBlobContainerService.DownloadBlobAsync(containerName, blobName, ms);
+                        if(!download)
+                        {
+                            return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to download blob {blobName}: {downloadError}");
+                        }
 
                         var result = await azureDocumentIntelligenceService.AnalyzePDFDocumentAsync(ms, DocumentModel.Layout, cancellationToken: HttpContext.RequestAborted);
 
-                        BooleanResult jsonResult = await FileService.SaveAsJSONFile(Path.Combine(fileDirectory, folderName), $"diResult_{pageNum}", result);
+                        var (valid, error) = await FileService.SaveAsJSONFile(Path.Combine(fileDirectory, folderName), $"diResult_{pageNum}", result);
 
-                        if (!jsonResult.Result)
+                        if (!valid)
                         {
-                            return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to save JSON for page {pageNum}: {jsonResult.Message}");
+                            return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to save JSON for page {pageNum}: {error}");
                         }
 
                         if (result.Value.Tables.Count > 0 || result.Value.Figures.Count > 0)

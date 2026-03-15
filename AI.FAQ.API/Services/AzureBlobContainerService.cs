@@ -1,12 +1,7 @@
-﻿using AI.FAQ.API.DataModel;
-using Azure;
-using Azure.Storage.Blobs;
+﻿using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
-using Microsoft.AspNetCore.Http;
-using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using UglyToad.PdfPig.Actions;
 
 namespace AI.FAQ.API.Services
 {
@@ -29,11 +24,11 @@ namespace AI.FAQ.API.Services
             return containerClient;
         }
 
-        public async Task<BooleanResult> UploadBlobAsync(string containerName, string newUploadBlobName, IFormFile? file = null, Stream? stream = null)
+        public async Task<(bool, string)> UploadBlobAsync(string containerName, string newUploadBlobName, IFormFile? file = null, Stream? stream = null)
         {
             if (file == null && stream == null)
             {
-                return new BooleanResult(false, "Either file or stream must be provided.");
+                return new (false, "Either file or stream must be provided.");
             }
 
             var containerClient = await GetBlobContainerClient(containerName, true);
@@ -54,13 +49,13 @@ namespace AI.FAQ.API.Services
             }
             catch (Exception ex)
             {
-                return new BooleanResult(false, $"Failed to upload blob: {ex.Message}");
+                return new (false, $"Failed to upload blob: {ex.Message}");
             }
 
-            return new BooleanResult(true);
+            return new (true, "");
         }
 
-        public async Task<BooleanResult> DownloadBlobAsync(string containerName, string blobName, Stream stream)
+        public async Task<(bool, string)> DownloadBlobAsync(string containerName, string blobName, Stream stream)
         {
             var containerClient = await GetBlobContainerClient(containerName);
             var blobClient = containerClient.GetBlobClient(blobName);
@@ -69,7 +64,7 @@ namespace AI.FAQ.API.Services
                 var existsResponse = await blobClient.ExistsAsync();
                 if (!existsResponse.Value)
                 {
-                    return new BooleanResult(false, "Blob does not exist.");
+                    return new (false, "Blob does not exist.");
                 }
 
                 var downloadResponse = await blobClient.DownloadToAsync(stream);
@@ -78,14 +73,14 @@ namespace AI.FAQ.API.Services
                 var success = downloadResponse.Status >= 200 && downloadResponse.Status <= 299;
                 if (!success)
                 {
-                    return new BooleanResult(false, $"Failed to download blob, status code: {downloadResponse.Status}");
+                    return new (false, $"Failed to download blob, status code: {downloadResponse.Status}");
                 }
 
-                return new BooleanResult(true);
+                return new (true, "");
             }
             catch (Exception ex)
             {
-                return new BooleanResult(false, $"Failed to download blob: {ex.Message}");
+                return new (false, $"Failed to download blob: {ex.Message}");
             }
         }
 

@@ -1,6 +1,4 @@
-﻿using AI.FAQ.API.DataModel;
-using System.Text;
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace AI.FAQ.API.Services
 {
@@ -35,13 +33,13 @@ namespace AI.FAQ.API.Services
             return $"{date}_{randomPart}.pdf";
         }
 
-        public static BooleanResult CheckFileRequirement(IFormFile file, int sizeInMB, string[] allowedFileExtensions)
+        public static (bool, string) CheckFileRequirement(IFormFile file, int sizeInMB, string[] allowedFileExtensions)
         {
-            if (file == null || file.Length == 0) return new BooleanResult(false, "Invalid file.");
-            if (file.Length > (long)sizeInMB * 1024 * 1024) return new BooleanResult(false, $"Too large. Max file size is {sizeInMB} MB. ");
+            if (file == null || file.Length == 0) return new (false, "Invalid file.");
+            if (file.Length > (long)sizeInMB * 1024 * 1024) return new (false, $"Too large. Max file size is {sizeInMB} MB. ");
 
             string ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!allowedFileExtensions.Contains(ext)) return new BooleanResult(false, "Invalid extension.");
+            if (!allowedFileExtensions.Contains(ext)) return new (false, "Invalid extension.");
 
             if (_fileSignatures.TryGetValue(ext, out byte[]? signature) && signature != null)
             {
@@ -50,16 +48,16 @@ namespace AI.FAQ.API.Services
                     var header = reader.ReadBytes(signature.Length);
                     if (!header.SequenceEqual(signature))
                     {
-                        return new BooleanResult(false, "File content mismatch.");
+                        return new (false, "File content mismatch.");
                     }
                 }
             }
             else
             {
-                return new BooleanResult(false, "Unable to read file content. ");
+                return new (false, "Unable to read file content. ");
             }
 
-            return new BooleanResult(true);
+            return new (true, "");
         }
 
         public static async Task<string> GetFileJSONContent(string filePath)
@@ -80,7 +78,7 @@ namespace AI.FAQ.API.Services
             }
         }
 
-        public static async Task<BooleanResult> SaveAsJSONFile(string directoryPath, string fileName, object data)
+        public static async Task<(bool, string)> SaveAsJSONFile(string directoryPath, string fileName, object data)
         {
             try
             {
@@ -93,11 +91,11 @@ namespace AI.FAQ.API.Services
                 string finalJson = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
                 await File.WriteAllTextAsync(Path.Combine(directoryPath, fileName), finalJson);
 
-                return new BooleanResult(true);
+                return new (true, "");
             }
             catch (Exception ex)
             {
-                return new BooleanResult(false, $"Error saving JSON file: {ex.Message}");
+                return new (false, $"Error saving JSON file: {ex.Message}");
             }
         }
     }
