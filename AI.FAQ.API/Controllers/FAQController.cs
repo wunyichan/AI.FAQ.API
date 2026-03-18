@@ -20,43 +20,7 @@ namespace AI.FAQ.API.Controllers
         private readonly AzureDocumentIntelligenceService azureDocumentIntelligenceService;
         private readonly AzureOpenAIClientService azureOpenAIClientService;
 
-        private const string QaPrompt = @"
-                                            You are extracting Q&A pairs from a batch of PDF pages.
-                                            Rules:
-                                            1. Extract complete pairs into the 'pairs' array.
-                                            2. For each pair, include 'page_range' (e.g., '3' or '3-4') indicating where the information appears.
-                                            3. If the batch starts with text that completes a sentence from a previous page, put it in 'prefixCompletion'.
-                                            4. If the batch ends with an unfinished question or answer, put that EXACT trailing text into 'suffixContext'.
-                                            5. The answer may include images or tables. If it does, include the name and a description of each in the 'figures' and 'tables' arrays, along with their page numbers and original image path.
-                                            6. The filename of each image/table will be provided before the image bytes, please return the same image path in your response so we can match it back to the correct image.
-                                            7. Return ONLY valid JSON:
-                                            {
-                                                ""prefixCompletion"": ""..."",
-                                                ""pairs"": [ 
-                                                {
-                                                    ""question"": ""..."", 
-                                                    ""answer"": ""..."", 
-                                                    ""page_range"": ""3-4"",
-                                                    ""figures"": [ 
-                                                        {
-                                                            ""image_name"": ""..."",
-                                                            ""caption"": ""..."",
-                                                            ""page"": 4,
-                                                            ""path"": ""...""
-                                                        }
-                                                     ],
-                                                     ""tables"": [
-                                                        {
-                                                            ""image_name"": ""..."",
-                                                            ""caption"": ""..."",
-                                                            ""page"": 3,
-                                                            ""path"": ""...""
-                                                } 
-                                                ],
-                                                ""suffixContext"": ""..."" 
-                                            }";
-
-        private readonly int batchSize = 2;
+        private readonly int batchSize = 1;
 
         public FAQController(IConfiguration config, IWebHostEnvironment env)
         {
@@ -395,9 +359,12 @@ namespace AI.FAQ.API.Controllers
         }
 
         [HttpGet("4/open-ai-generate-qa")]
-        public async Task<IActionResult> GenerateQA()
+        public async Task<IActionResult> GenerateQA(string? targetFile)
         {
+            targetFile = targetFile ?? ConfigService.GetConfigValue(_config, "DIFolder:CurrentTarget");
+
             string jsonContent = await FileService.GetFileJSONContent(Path.Combine(_env.ContentRootPath, "Data", "all_pages_data.json"));
+            string qaPrompt = await FileService.ReadTextFile(Path.Combine(_env.ContentRootPath, "Config", "system_prompt.txt")) ?? "Generate question-answer pairs based on the following content. Return the result in JSON format with two properties: 'pairs' which is an array of question-answer pairs, and 'suffixContext' which is any text from the end of the content that was cut off and should be included at the beginning of the next batch. Here is the content: \n\n{content}";
 
             // Deserialize into model
             var data = AllPageInfo.FromJsonArray(jsonContent);
@@ -412,9 +379,22 @@ namespace AI.FAQ.API.Controllers
             ChatClient chatClient = azureOpenAIClientService.GetChatClient(ConfigService.GetConfigValue(_config, "AzureOpenAI:Deployment"));
 
             // 2. Loop through pages in increments of batchSize
-            for (int i = 0; i < orderedPages.Count; i += batchSize)
+            for (int i = 0; i < orderedPages.Count; i++)
             {
-                var batch = orderedPages.Skip(i).Take(batchSize);
+                var batch = new List<AllPageInfo> { orderedPages[i] };
+
+                // LOOK-AHEAD INJECTION
+                if (i + 1 < orderedPages.Count)
+                {
+                    var nextPage = orderedPages[i + 1];
+
+                    if (ShouldLookAhead(leftoverContext, nextPage))
+                    {
+                        batch.Add(nextPage);
+                        i++; // Skip next page because it's merged into this batch
+                    }
+                }
+ ;
                 string currentBatchText = string.Join("\n\n", batch.Select(p => p.Content));
 
                 // Prepend any context that was cut off from the PREVIOUS batch
@@ -422,10 +402,12 @@ namespace AI.FAQ.API.Controllers
                     ? currentBatchText
                     : $"[CONTINUATION FROM PREVIOUS PAGE]: {leftoverContext}\n\n{currentBatchText}";
 
-                var userMessage = new UserChatMessage(promptInput);
                 var messages = new List<ChatMessage> {
-                                        new SystemChatMessage(QaPrompt)
+                                        new SystemChatMessage(qaPrompt),
+                                        new AssistantChatMessage(JsonSerializer.Serialize(qaPairs))
                                     };
+
+                var userMessage = new UserChatMessage(promptInput);
 
                 foreach (var page in batch)
                 {
@@ -468,9 +450,13 @@ namespace AI.FAQ.API.Controllers
                             }
                         }
                     }
+
+                    string diJSON = await FileService.GetFileJSONContent(Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", targetFile, $"diResult_{page.PageNo}.json"));
+                    messages.Add(new UserChatMessage($"Result from Azure Document Intelligence: {diJSON}"));
                 }
 
                 messages.Add(userMessage);
+
                 var response = await azureOpenAIClientService.GetChatCompletionAsync(chatClient, messages);
                 string resultJson = response.Value.Content?[0].Text.ToString() ?? "{}";
 
@@ -494,7 +480,29 @@ namespace AI.FAQ.API.Controllers
 
             await FileService.SaveAsJSONFile(Path.Combine(_env.ContentRootPath, "Data"), "qaPairs", qaPairs);
 
-            return Ok(qaPairs);
+            return Ok(new
+            {
+                batch_size = batchSize,
+                qaPairs
+            });
+        }
+
+        private bool ShouldLookAhead(string? leftoverContext, AllPageInfo nextPage)
+        {
+            if (!string.IsNullOrWhiteSpace(leftoverContext))
+                return true;
+
+            // If next page does NOT start with a new question
+            if (!nextPage!.Content!.TrimStart().StartsWith("##") &&
+                !nextPage.Content.TrimStart().StartsWith("Q"))
+                return true;
+
+            // If next page contains visuals but no new question
+            if ((nextPage.FigureCount > 0 || nextPage.TableCount > 0) &&
+                !nextPage.Content.Contains("?"))
+                return true;
+
+            return false;
         }
 
     }

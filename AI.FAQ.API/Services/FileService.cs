@@ -98,5 +98,18 @@ namespace AI.FAQ.API.Services
                 return new (false, $"Error saving JSON file: {ex.Message}");
             }
         }
+
+        public static async Task<string> ReadTextFile(string filePath)
+        {
+            try { 
+                if (!File.Exists(filePath))
+                    throw new FileNotFoundException("File Not Found. ");
+                return await File.ReadAllTextAsync(filePath);
+            }
+            catch
+            {
+                throw new FileNotFoundException("File Not Found. ");
+            }
+        }
     }
 }
