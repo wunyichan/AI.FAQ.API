@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using OpenAI.Chat;
 using PdfSharpCore.Pdf;
 using PdfSharpCore.Pdf.IO;
-using SixLabors.ImageSharp.PixelFormats;
 using System.Text.Json;
 
 namespace AI.FAQ.API.Controllers
@@ -20,7 +19,7 @@ namespace AI.FAQ.API.Controllers
         private readonly AzureDocumentIntelligenceService azureDocumentIntelligenceService;
         private readonly AzureOpenAIClientService azureOpenAIClientService;
 
-        private readonly int batchSize = 1;
+        private readonly int batchSize = 2;
 
         public FAQController(IConfiguration config, IWebHostEnvironment env)
         {
