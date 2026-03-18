@@ -54,7 +54,7 @@ namespace AI.FAQ.API.Services
         {
             var options = model == DocumentModel.Layout ? new AnalyzeDocumentOptions("prebuilt-layout", document)
             {
-                OutputContentFormat = DocumentContentFormat.Markdown
+                OutputContentFormat = DocumentContentFormat.Text
             } : new AnalyzeDocumentOptions(GetModelId(model, customModel ?? ""), document);
 
             return options;

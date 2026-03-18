@@ -5,6 +5,7 @@ using OpenAI.Chat;
 using PdfSharpCore.Pdf;
 using PdfSharpCore.Pdf.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace AI.FAQ.API.Controllers
 {
@@ -300,7 +301,7 @@ namespace AI.FAQ.API.Controllers
             await FileService.SaveAsJSONFile(Path.Combine(_env.ContentRootPath, "Data"), "pages_with_figures_tables", figureTablePages);
             await FileService.SaveAsJSONFile(Path.Combine(_env.ContentRootPath, "Data"), "all_pages_data", allPages);
 
-            return Ok();
+            return Ok("JSON files created. ");
         }
 
         private int ExtractPageNumber(string filePath)
@@ -377,7 +378,7 @@ namespace AI.FAQ.API.Controllers
 
             ChatClient chatClient = azureOpenAIClientService.GetChatClient(ConfigService.GetConfigValue(_config, "AzureOpenAI:Deployment"));
 
-            // 2. Loop through pages in increments of batchSize
+            // 2. Loop through pages in increments 
             for (int i = 0; i < orderedPages.Count; i++)
             {
                 var batch = new List<AllPageInfo> { orderedPages[i] };
@@ -406,7 +407,10 @@ namespace AI.FAQ.API.Controllers
                                         new AssistantChatMessage(JsonSerializer.Serialize(qaPairs))
                                     };
 
-                var userMessage = new UserChatMessage(promptInput);
+                var userMessage = new UserChatMessage("");
+                userMessage.Content.Add($"The total page for this PDF file is {orderedPages.Count}");
+                userMessage.Content.Add(promptInput);
+
 
                 foreach (var page in batch)
                 {
@@ -451,7 +455,7 @@ namespace AI.FAQ.API.Controllers
                     }
 
                     string diJSON = await FileService.GetFileJSONContent(Path.Combine(_env.ContentRootPath, "Data", _config["DIFolder:FolderName"] ?? "", targetFile, $"diResult_{page.PageNo}.json"));
-                    messages.Add(new UserChatMessage($"Result from Azure Document Intelligence: {diJSON}"));
+                    userMessage.Content.Add($"\nResult from Azure Document Intelligence: {diJSON}\n");
                 }
 
                 messages.Add(userMessage);
@@ -462,47 +466,63 @@ namespace AI.FAQ.API.Controllers
                 // 3. Parse and handle continuity
                 var result = JsonSerializer.Deserialize<JsonElement>(resultJson);
 
-                // Add complete pairs to our master list
-                if (result.TryGetProperty("pairs", out var pairs))
+                if (result.ValueKind == JsonValueKind.Array)
                 {
-                    foreach (var pair in pairs.EnumerateArray())
+                    // Model returned raw array — treat it as full Q&A set
+                    qaPairs = new List<dynamic>();
+                    foreach (var pair in result.EnumerateArray())
                     {
                         qaPairs.Add(pair);
                     }
+                    leftoverContext = "";
                 }
+                else if (result.ValueKind == JsonValueKind.Object)
+                {
+                    if (result.TryGetProperty("pairs", out var pairs))
+                    {
+                        var newPairs = new List<dynamic>();
+                        foreach (var pair in pairs.EnumerateArray())
+                        {
+                            newPairs.Add(pair);
+                        }
+                        qaPairs = newPairs;
+                    }
 
-                // Capture the 'suffixContext' to pass into the NEXT loop iteration
-                leftoverContext = result.TryGetProperty("suffixContext", out var suffix)
-                    ? suffix.GetString()
-                    : "";
+                    leftoverContext = result.TryGetProperty("suffixContext", out var suffix)
+                        ? suffix.GetString()
+                        : "";
+                }
+                else
+                {
+                    // Unexpected format
+                    return BadRequest("Unexpected JSON format from model.");
+                }
             }
 
             await FileService.SaveAsJSONFile(Path.Combine(_env.ContentRootPath, "Data"), "qaPairs", qaPairs);
 
             return Ok(new
             {
-                batch_size = batchSize,
+                total_questions = qaPairs.Count,
                 qaPairs
             });
         }
 
         private bool ShouldLookAhead(string? leftoverContext, AllPageInfo nextPage)
         {
+            // If previous batch ended mid‑answer, always merge
             if (!string.IsNullOrWhiteSpace(leftoverContext))
                 return true;
 
-            // If next page does NOT start with a new question
-            if (!nextPage!.Content!.TrimStart().StartsWith("##") &&
-                !nextPage.Content.TrimStart().StartsWith("Q"))
-                return true;
+            // A valid question must match: number + dot + text + question mark
+            bool isNewQuestion = Regex.IsMatch(
+                nextPage.Content.TrimStart(),
+                @"^\d+\..*\?$",
+                RegexOptions.Multiline
+            );
 
-            // If next page contains visuals but no new question
-            if ((nextPage.FigureCount > 0 || nextPage.TableCount > 0) &&
-                !nextPage.Content.Contains("?"))
-                return true;
-
-            return false;
+            // If next page does NOT contain a valid question, it is continuation
+            return !isNewQuestion;
         }
-
     }
 }
