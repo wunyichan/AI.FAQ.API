@@ -26,6 +26,7 @@ namespace AI.FAQ.API.Controllers
                                             2. For each pair, include 'page_range' (e.g., '3' or '3-4') indicating where the information appears.
                                             3. If the batch starts with text that completes a sentence from a previous page, put it in 'prefixCompletion'.
                                             4. If the batch ends with an unfinished question or answer, put that EXACT trailing text into 'suffixContext'.
+                                            5. The answer may include images or tables. If it does, include the name and a description of each in the 'figures' and 'tables' arrays, along with their page numbers.
                                             5. Return ONLY valid JSON:
                                             {
                                                 ""prefixCompletion"": ""..."",
@@ -36,12 +37,14 @@ namespace AI.FAQ.API.Controllers
                                                     ""page_range"": ""3-4"",
                                                     ""figures"": [ 
                                                         {
+                                                            ""image_name"": ""figure_1.png"",
                                                             ""caption"": ""..."",
                                                             ""page"": 4
                                                         }
                                                      ],
                                                      ""tables"": [
                                                         {
+                                                            ""image_name"": ""table_1.png"",
                                                             ""caption"": ""..."",
                                                             ""page"": 3
                                                 } 
@@ -49,7 +52,7 @@ namespace AI.FAQ.API.Controllers
                                                 ""suffixContext"": ""..."" 
                                             }";
 
-        private readonly int batchSize = 5;
+        private readonly int batchSize = 2;
 
         public FAQController(IConfiguration config, IWebHostEnvironment env)
         {
@@ -133,98 +136,97 @@ namespace AI.FAQ.API.Controllers
         }
 
         [HttpGet("2/send-to-document-intelligent")]
-        public async Task<IActionResult> SendToDocumentIntelligence()
+        public async Task<IActionResult> SendToDocumentIntelligence(string? targetFile)
         {
+            targetFile = targetFile ?? ConfigService.GetConfigValue(_config, "DIFolder:CurrentTarget");
+
+            if (!targetFile.EndsWith("/"))
+                targetFile += "/";
+
+            string folderName = targetFile.TrimEnd('/');
+
             string containerName = ConfigService.GetConfigValue(_config, "AzureBlobStorage:SplitContainerName", "pdfsplits");
             string fileDirectory = Path.Combine(_env.ContentRootPath, "Data", ConfigService.GetConfigValue(_config, "DIFolder:FolderName"));
 
             var results = new List<object>();
+            var pages = new List<(int PageNumber, string Text)>();
 
-            await foreach (var folder in azureBlobContainerService.GetContainerFolderBlobItemsAsync(containerName, null, HttpContext.RequestAborted))
+            await foreach (var blobItem in azureBlobContainerService.GetContainerFolderBlobItemsAsync(containerName, targetFile, HttpContext.RequestAborted))
             {
-                if (!folder.IsPrefix) continue;
-                string folderName = folder.Prefix.TrimEnd('/');
-                var pages = new List<(int PageNumber, string Text)>();
+                if (blobItem.IsPrefix) continue;
+                string blobName = blobItem.Blob.Name;
 
-                await foreach (var blobItem in azureBlobContainerService.GetContainerFolderBlobItemsAsync(containerName, folder.Prefix, HttpContext.RequestAborted))
+                var fileName = Path.GetFileNameWithoutExtension(blobName);
+                var parts = fileName.Split('-');
+
+                if (parts.Length == 2 && int.TryParse(parts[1], out int pageNum))
                 {
-                    if (blobItem.IsPrefix) continue;
-                    string blobName = blobItem.Blob.Name;
-
-                    var fileName = Path.GetFileNameWithoutExtension(blobName);
-                    var parts = fileName.Split('-');
-
-                    if (parts.Length == 2 && int.TryParse(parts[1], out int pageNum))
+                    using var ms = new MemoryStream();
+                    var (download, downloadError) = await azureBlobContainerService.DownloadBlobAsync(containerName, blobName, ms);
+                    if (!download)
                     {
-                        using var ms = new MemoryStream();
-                        var (download, downloadError) = await azureBlobContainerService.DownloadBlobAsync(containerName, blobName, ms);
-                        if(!download)
+                        return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to download blob {blobName}: {downloadError}");
+                    }
+
+                    var result = await azureDocumentIntelligenceService.AnalyzePDFDocumentAsync(ms, DocumentModel.Layout, cancellationToken: HttpContext.RequestAborted);
+
+                    var (valid, error) = await FileService.SaveAsJSONFile(Path.Combine(fileDirectory, folderName), $"diResult_{pageNum}", result);
+
+                    if (!valid)
+                    {
+                        return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to save JSON for page {pageNum}: {error}");
+                    }
+
+                    if (result.Value.Tables.Count > 0 || result.Value.Figures.Count > 0)
+                    {
+                        string imageDir = Path.Combine(fileDirectory, folderName + "_images", $"page-{pageNum}");
+                        Directory.CreateDirectory(imageDir);
+
+                        using var pageImage = CropPDFImageService.RenderPdfToImage(ms);
+
+                        foreach (var page in result.Value.Pages)
                         {
-                            return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to download blob {blobName}: {downloadError}");
-                        }
+                            var (scaleX, scaleY) = CropPDFImageService.CalculateScaleFactors(pageImage, page);
 
-                        var result = await azureDocumentIntelligenceService.AnalyzePDFDocumentAsync(ms, DocumentModel.Layout, cancellationToken: HttpContext.RequestAborted);
-
-                        var (valid, error) = await FileService.SaveAsJSONFile(Path.Combine(fileDirectory, folderName), $"diResult_{pageNum}", result);
-
-                        if (!valid)
-                        {
-                            return StatusCode(StatusCodes.Status500InternalServerError, $"Failed to save JSON for page {pageNum}: {error}");
-                        }
-
-                        if (result.Value.Tables.Count > 0 || result.Value.Figures.Count > 0)
-                        {
-                            string imageDir = Path.Combine(fileDirectory, folderName + "_images", $"page-{pageNum}");
-                            Directory.CreateDirectory(imageDir);
-
-                            using var pageImage = CropPDFImageService.RenderPdfToImage(ms);
-
-                            foreach (var page in result.Value.Pages)
+                            // ---- TABLES ----
+                            int tIndex = 1;
+                            foreach (var table in result.Value.Tables)
                             {
-                                var (scaleX, scaleY) = CropPDFImageService.CalculateScaleFactors(pageImage, page);
+                                var region = table.BoundingRegions.First();
+                                CropPDFImageService.CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
+                                    Path.Combine(imageDir, $"table_{tIndex}.png"));
+                                tIndex++;
+                            }
 
-                                // ---- TABLES ----
-                                int tIndex = 1;
-                                foreach (var table in result.Value.Tables)
-                                {
-                                    var region = table.BoundingRegions.First();
-                                    CropPDFImageService.CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
-                                        Path.Combine(imageDir, $"table_{tIndex}.png"));
-                                    tIndex++;
-                                }
-
-                                // ---- FIGURES ----
-                                int fIndex = 1;
-                                foreach (var fig in result.Value.Figures)
-                                {
-                                    var region = fig.BoundingRegions.First();
-                                    CropPDFImageService.CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
-                                        Path.Combine(imageDir, $"figure_{fIndex}.png"));
-                                    fIndex++;
-                                }
+                            // ---- FIGURES ----
+                            int fIndex = 1;
+                            foreach (var fig in result.Value.Figures)
+                            {
+                                var region = fig.BoundingRegions.First();
+                                CropPDFImageService.CropAndSave(pageImage, region.Polygon, scaleX, scaleY,
+                                    Path.Combine(imageDir, $"figure_{fIndex}.png"));
+                                fIndex++;
                             }
                         }
-
-                        string extractedText = result.Value.Content ?? string.Empty;
-                        pages.Add((pageNum, extractedText));
                     }
+
+                    string extractedText = result.Value.Content ?? string.Empty;
+                    pages.Add((pageNum, extractedText));
                 }
-
-                // Sort pages by page number
-                pages = pages.OrderBy(p => p.PageNumber).ToList();
-
-                return Ok(new
-                {
-                    Folder = folder,
-                    Pages = pages.Select(p => new
-                    {
-                        Page = p.PageNumber,
-                        ExtractedText = p.Text
-                    })
-                });
             }
 
-            return Ok(results);
+            // Sort pages by page number
+            pages = pages.OrderBy(p => p.PageNumber).ToList();
+
+            return Ok(new
+            {
+                Folder = folderName,
+                Pages = pages.Select(p => new
+                {
+                    Page = p.PageNumber,
+                    ExtractedText = p.Text
+                })
+            });
         }
 
         [HttpGet("3/read")]
@@ -285,24 +287,11 @@ namespace AI.FAQ.API.Controllers
 
                             foreach (string imgPath in _imgFiles)
                             {
-                                try
+                                figures.Add(new
                                 {
-                                    // 1. Read file to binary
-                                    byte[] fileBytes = System.IO.File.ReadAllBytes(filePath);
-
-                                    // 2. Convert binary to Base64 string
-                                    string base64String = Convert.ToBase64String(fileBytes);
-
-                                    figures.Add(new
-                                    {
-                                        caption = Path.GetFileNameWithoutExtension(imgPath),
-                                        path = imgPath,
-                                        data_image = $"data:image/png;base64,{base64String}"
-                                    });
-                                }
-                                catch (IOException ex)
-                                {
-                                }
+                                    caption = Path.GetFileNameWithoutExtension(imgPath),
+                                    path = imgPath
+                                });
                             }
                         }
                     }
@@ -316,24 +305,11 @@ namespace AI.FAQ.API.Controllers
 
                             foreach (string tablePath in _tableFiles)
                             {
-                                try
+                                tables.Add(new
                                 {
-                                    // 1. Read file to binary
-                                    byte[] fileBytes = System.IO.File.ReadAllBytes(filePath);
-
-                                    // 2. Convert binary to Base64 string
-                                    string base64String = Convert.ToBase64String(fileBytes);
-
-                                    tables.Add(new
-                                    {
-                                        caption = Path.GetFileNameWithoutExtension(tablePath),
-                                        path = tablePath,
-                                        data_image = $"data:image/png;base64,{base64String}"
-                                    });
-                                }
-                                catch (IOException ex)
-                                {
-                                }
+                                    caption = Path.GetFileNameWithoutExtension(tablePath),
+                                    path = tablePath,
+                                });
                             }
                         }
                     }
@@ -400,7 +376,7 @@ namespace AI.FAQ.API.Controllers
 
             ChatClient chatClient = azureOpenAIClientService.GetChatClient(ConfigService.GetConfigValue(_config, "AzureOpenAI:Deployment"));
 
-            // 2. Loop through pages in increments of 5
+            // 2. Loop through pages in increments of batchSize
             for (int i = 0; i < orderedPages.Count; i += batchSize)
             {
                 var batch = orderedPages.Skip(i).Take(batchSize);
