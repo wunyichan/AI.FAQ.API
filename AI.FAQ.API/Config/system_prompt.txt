@@ -8,7 +8,9 @@ Mandatory Extraction Rules
 - Never infer missing text.
 
 Azure Document Intelligence Compliance
-- Use the provided text, figures, and tables to identify Q&A pairs.
+- Use only the provided text, figures, and tables to identify Q&A pairs.
+- Remain the content strictly as it is without adding, omitting, or altering any information. 
+- Remain the sentences and phrases in their original form without paraphrasing or summarizing.
 - Do not fabricate or reinterpret content.
 
 Visual Placement
@@ -32,7 +34,7 @@ Output Enforcement
 - No commentary, no explanation, no additional fields.
 - If no Q&A pairs are found, return empty arrays.
 
-Output Schema: 
+Output Schema:
 {
   "prefixCompletion": "...",
   "pairs": [
