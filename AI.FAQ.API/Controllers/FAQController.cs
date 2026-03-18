@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using OpenAI.Chat;
 using PdfSharpCore.Pdf;
 using PdfSharpCore.Pdf.IO;
+using SixLabors.ImageSharp.PixelFormats;
 using System.Text.Json;
 
 namespace AI.FAQ.API.Controllers
@@ -26,8 +27,9 @@ namespace AI.FAQ.API.Controllers
                                             2. For each pair, include 'page_range' (e.g., '3' or '3-4') indicating where the information appears.
                                             3. If the batch starts with text that completes a sentence from a previous page, put it in 'prefixCompletion'.
                                             4. If the batch ends with an unfinished question or answer, put that EXACT trailing text into 'suffixContext'.
-                                            5. The answer may include images or tables. If it does, include the name and a description of each in the 'figures' and 'tables' arrays, along with their page numbers.
-                                            5. Return ONLY valid JSON:
+                                            5. The answer may include images or tables. If it does, include the name and a description of each in the 'figures' and 'tables' arrays, along with their page numbers and original image path.
+                                            6. The filename of each image/table will be provided before the image bytes, please return the same image path in your response so we can match it back to the correct image.
+                                            7. Return ONLY valid JSON:
                                             {
                                                 ""prefixCompletion"": ""..."",
                                                 ""pairs"": [ 
@@ -37,16 +39,18 @@ namespace AI.FAQ.API.Controllers
                                                     ""page_range"": ""3-4"",
                                                     ""figures"": [ 
                                                         {
-                                                            ""image_name"": ""figure_1.png"",
+                                                            ""image_name"": ""..."",
                                                             ""caption"": ""..."",
-                                                            ""page"": 4
+                                                            ""page"": 4,
+                                                            ""path"": ""...""
                                                         }
                                                      ],
                                                      ""tables"": [
                                                         {
-                                                            ""image_name"": ""table_1.png"",
+                                                            ""image_name"": ""..."",
                                                             ""caption"": ""..."",
-                                                            ""page"": 3
+                                                            ""page"": 3,
+                                                            ""path"": ""...""
                                                 } 
                                                 ],
                                                 ""suffixContext"": ""..."" 
@@ -356,7 +360,38 @@ namespace AI.FAQ.API.Controllers
             if (data == null || data.Length == 0)
                 return BadRequest("No pages found.");
 
-            return Ok(data.OrderBy(p => p.PageNo).ToList());
+            List<string> imagePath = new List<string>();
+            var orderedPages = data.OrderBy(p => p.PageNo).ToList();
+            for (int i = 0; i < orderedPages.Count; i += batchSize)
+            {
+                var batch = orderedPages.Skip(i).Take(batchSize);
+                foreach (var page in batch)
+                {
+                    if (page.FigureCount > 0)
+                    {
+                        foreach (var fig in page.Figures!)
+                        {
+                            if (!String.IsNullOrEmpty(fig.Path) && System.IO.File.Exists(fig.Path))
+                            {
+                                imagePath.Add(fig.Path);
+                            }
+                        }
+                    }
+
+                    if (page.TableCount > 0)
+                    {
+                        foreach (var table in page.Tables!)
+                        {
+                            if (!String.IsNullOrEmpty(table.Path) && System.IO.File.Exists(table.Path))
+                            {
+                                imagePath.Add(table.Path);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Ok(imagePath);
         }
 
         [HttpGet("4/open-ai-generate-qa")]
@@ -387,11 +422,55 @@ namespace AI.FAQ.API.Controllers
                     ? currentBatchText
                     : $"[CONTINUATION FROM PREVIOUS PAGE]: {leftoverContext}\n\n{currentBatchText}";
 
+                var userMessage = new UserChatMessage(promptInput);
                 var messages = new List<ChatMessage> {
-                                        new SystemChatMessage(QaPrompt),
-                                        new UserChatMessage(promptInput)
+                                        new SystemChatMessage(QaPrompt)
                                     };
 
+                foreach (var page in batch)
+                {
+                    if (page.FigureCount > 0)
+                    {
+                        foreach (var fig in page.Figures!)
+                        {
+                            if (!String.IsNullOrEmpty(fig.Path) && System.IO.File.Exists(fig.Path))
+                            {
+                                byte[] imageBytes = await System.IO.File.ReadAllBytesAsync(fig.Path);
+                                string imageTypeName = Path.GetExtension(Path.GetFileName(fig.Path)).Replace(".", String.Empty);
+
+                                userMessage.Content.Add(fig.Path);
+                                userMessage.Content.Add(
+                                           ChatMessageContentPart.CreateImagePart(
+                                               BinaryData.FromBytes(imageBytes),
+                                               $"image/{imageTypeName}"
+                                           )
+                                       );
+                            }
+                        }
+                    }
+
+                    if (page.TableCount > 0)
+                    {
+                        foreach (var table in page.Tables!)
+                        {
+                            if (!String.IsNullOrEmpty(table.Path) && System.IO.File.Exists(table.Path))
+                            {
+                                byte[] imageBytes = await System.IO.File.ReadAllBytesAsync(table.Path);
+                                string imageTypeName = Path.GetExtension(Path.GetFileName(table.Path)).Replace(".", String.Empty);
+
+                                userMessage.Content.Add(table.Path);
+                                userMessage.Content.Add(
+                                           ChatMessageContentPart.CreateImagePart(
+                                               BinaryData.FromBytes(imageBytes),
+                                               $"image/{imageTypeName}"
+                                           )
+                                       );
+                            }
+                        }
+                    }
+                }
+
+                messages.Add(userMessage);
                 var response = await azureOpenAIClientService.GetChatCompletionAsync(chatClient, messages);
                 string resultJson = response.Value.Content?[0].Text.ToString() ?? "{}";
 

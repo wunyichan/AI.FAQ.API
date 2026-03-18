@@ -1,66 +1,66 @@
-using Newtonsoft.Json;
-using Newtonsoft.Json.Converters;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Globalization;
 
 namespace AI.FAQ.API.DataModel
 {
     public partial class Page
     {
-        [JsonProperty("Value")]
+        [JsonPropertyName("Value")]
         public Value? Value { get; set; }
 
-        [JsonProperty("HasValue")]
+        [JsonPropertyName("HasValue")]
         public bool? HasValue { get; set; }
 
-        [JsonProperty("Id")]
+        [JsonPropertyName("Id")]
         public Guid? Id { get; set; }
 
-        [JsonProperty("HasCompleted")]
+        [JsonPropertyName("HasCompleted")]
         public bool? HasCompleted { get; set; }
     }
 
     public partial class Value
     {
-        [JsonProperty("ApiVersion")]
+        [JsonPropertyName("ApiVersion")]
         public DateTimeOffset? ApiVersion { get; set; }
 
-        [JsonProperty("ModelId")]
+        [JsonPropertyName("ModelId")]
         public string? ModelId { get; set; }
 
-        [JsonProperty("ContentFormat")]
+        [JsonPropertyName("ContentFormat")]
         public ContentFormat? ContentFormat { get; set; }
 
-        [JsonProperty("Content")]
+        [JsonPropertyName("Content")]
         public string? Content { get; set; }
 
-        [JsonProperty("Pages")]
+        [JsonPropertyName("Pages")]
         public PageElement[]? Pages { get; set; }
 
-        [JsonProperty("Paragraphs")]
+        [JsonPropertyName("Paragraphs")]
         public Paragraph[]? Paragraphs { get; set; }
 
-        [JsonProperty("Tables")]
+        [JsonPropertyName("Tables")]
         public Table[]? Tables { get; set; }
 
-        [JsonProperty("Figures")]
+        [JsonPropertyName("Figures")]
         public Figure[]? Figures { get; set; }
 
-        [JsonProperty("Sections")]
+        [JsonPropertyName("Sections")]
         public Section[]? Sections { get; set; }
 
-        [JsonProperty("KeyValuePairs")]
+        [JsonPropertyName("KeyValuePairs")]
         public object[]? KeyValuePairs { get; set; }
 
-        [JsonProperty("Styles")]
+        [JsonPropertyName("Styles")]
         public object[]? Styles { get; set; }
 
-        [JsonProperty("Languages")]
+        [JsonPropertyName("Languages")]
         public object[]? Languages { get; set; }
 
-        [JsonProperty("Documents")]
+        [JsonPropertyName("Documents")]
         public object[]? Documents { get; set; }
 
-        [JsonProperty("Warnings")]
+        [JsonPropertyName("Warnings")]
         public object[]? Warnings { get; set; }
     }
 
@@ -70,184 +70,186 @@ namespace AI.FAQ.API.DataModel
 
     public partial class Figure
     {
-        [JsonProperty("BoundingRegions")]
+        [JsonPropertyName("BoundingRegions")]
         public BoundingRegion[]? BoundingRegions { get; set; }
 
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
 
-        [JsonProperty("Elements")]
+        [JsonPropertyName("Elements")]
         public string[]? Elements { get; set; }
 
-        [JsonProperty("Caption")]
+        [JsonPropertyName("Caption")]
         public object? Caption { get; set; }
 
-        [JsonProperty("Footnotes")]
+        [JsonPropertyName("Footnotes")]
         public object[]? Footnotes { get; set; }
 
-        [JsonProperty("Id")]
+        [JsonPropertyName("Id")]
         public string? Id { get; set; }
     }
 
     public partial class BoundingRegion
     {
-        [JsonProperty("PageNumber")]
+        [JsonPropertyName("PageNumber")]
         public long? PageNumber { get; set; }
 
-        [JsonProperty("Polygon")]
+        [JsonPropertyName("Polygon")]
         public double[]? Polygon { get; set; }
     }
 
     public partial class Span
     {
-        [JsonProperty("Offset")]
+        [JsonPropertyName("Offset")]
         public long? Offset { get; set; }
 
-        [JsonProperty("Length")]
+        [JsonPropertyName("Length")]
         public long? Length { get; set; }
     }
 
     public partial class PageElement
     {
-        [JsonProperty("PageNumber")]
+        [JsonPropertyName("PageNumber")]
         public long? PageNumber { get; set; }
 
-        [JsonProperty("Angle")]
+        [JsonPropertyName("Angle")]
         public double? Angle { get; set; }
 
-        [JsonProperty("Width")]
+        [JsonPropertyName("Width")]
         public double? Width { get; set; }
 
-        [JsonProperty("Height")]
+        [JsonPropertyName("Height")]
         public long? Height { get; set; }
 
-        [JsonProperty("Unit")]
+        [JsonPropertyName("Unit")]
         public ContentFormat? Unit { get; set; }
 
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
 
-        [JsonProperty("Words")]
+        [JsonPropertyName("Words")]
         public SelectionMark[]? Words { get; set; }
 
-        [JsonProperty("SelectionMarks")]
+        [JsonPropertyName("SelectionMarks")]
         public SelectionMark[]? SelectionMarks { get; set; }
 
-        [JsonProperty("Lines")]
+        [JsonPropertyName("Lines")]
         public Line[]? Lines { get; set; }
 
-        [JsonProperty("Barcodes")]
+        [JsonPropertyName("Barcodes")]
         public object[]? Barcodes { get; set; }
 
-        [JsonProperty("Formulas")]
+        [JsonPropertyName("Formulas")]
         public object[]? Formulas { get; set; }
     }
 
     public partial class Line
     {
-        [JsonProperty("Content")]
+        [JsonPropertyName("Content")]
         public string? Content { get; set; }
 
-        [JsonProperty("Polygon")]
+        [JsonPropertyName("Polygon")]
         public double[]? Polygon { get; set; }
 
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
     }
 
     public partial class SelectionMark
     {
-        [JsonProperty("State", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonPropertyName("State")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public ContentFormat? State { get; set; }
 
-        [JsonProperty("Polygon")]
+        [JsonPropertyName("Polygon")]
         public double[]? Polygon { get; set; }
 
-        [JsonProperty("Span")]
+        [JsonPropertyName("Span")]
         public Span? Span { get; set; }
 
-        [JsonProperty("Confidence")]
+        [JsonPropertyName("Confidence")]
         public double? Confidence { get; set; }
 
-        [JsonProperty("Content", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonPropertyName("Content")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Content { get; set; }
     }
 
     public partial class Paragraph
     {
-        [JsonProperty("Role")]
+        [JsonPropertyName("Role")]
         public ContentFormat? Role { get; set; }
 
-        [JsonProperty("Content")]
+        [JsonPropertyName("Content")]
         public string? Content { get; set; }
 
-        [JsonProperty("BoundingRegions")]
+        [JsonPropertyName("BoundingRegions")]
         public BoundingRegion[]? BoundingRegions { get; set; }
 
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
     }
 
     public partial class Section
     {
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
 
-        [JsonProperty("Elements")]
+        [JsonPropertyName("Elements")]
         public string[]? Elements { get; set; }
     }
 
     public partial class Table
     {
-        [JsonProperty("RowCount")]
+        [JsonPropertyName("RowCount")]
         public long? RowCount { get; set; }
 
-        [JsonProperty("ColumnCount")]
+        [JsonPropertyName("ColumnCount")]
         public long? ColumnCount { get; set; }
 
-        [JsonProperty("Cells")]
+        [JsonPropertyName("Cells")]
         public Cell[]? Cells { get; set; }
 
-        [JsonProperty("BoundingRegions")]
+        [JsonPropertyName("BoundingRegions")]
         public BoundingRegion[]? BoundingRegions { get; set; }
 
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
 
-        [JsonProperty("Caption")]
+        [JsonPropertyName("Caption")]
         public object? Caption { get; set; }
 
-        [JsonProperty("Footnotes")]
+        [JsonPropertyName("Footnotes")]
         public object[]? Footnotes { get; set; }
     }
 
     public partial class Cell
     {
-        [JsonProperty("Kind")]
+        [JsonPropertyName("Kind")]
         public ContentFormat? Kind { get; set; }
 
-        [JsonProperty("RowIndex")]
+        [JsonPropertyName("RowIndex")]
         public long? RowIndex { get; set; }
 
-        [JsonProperty("ColumnIndex")]
+        [JsonPropertyName("ColumnIndex")]
         public long? ColumnIndex { get; set; }
 
-        [JsonProperty("RowSpan")]
+        [JsonPropertyName("RowSpan")]
         public long? RowSpan { get; set; }
 
-        [JsonProperty("ColumnSpan")]
+        [JsonPropertyName("ColumnSpan")]
         public object? ColumnSpan { get; set; }
 
-        [JsonProperty("Content")]
+        [JsonPropertyName("Content")]
         public string? Content { get; set; }
 
-        [JsonProperty("BoundingRegions")]
+        [JsonPropertyName("BoundingRegions")]
         public BoundingRegion[]? BoundingRegions { get; set; }
 
-        [JsonProperty("Spans")]
+        [JsonPropertyName("Spans")]
         public Span[]? Spans { get; set; }
 
-        [JsonProperty("Elements")]
+        [JsonPropertyName("Elements")]
         public string[]? Elements { get; set; }
     }
 
@@ -255,29 +257,8 @@ namespace AI.FAQ.API.DataModel
     {
         public static Page FromJson(string? json)
         {
-            // Deserialize and ensure non-null result; throw if deserialization produced null.
-            return JsonConvert.DeserializeObject<Page>(json!, Converter.Settings)
-                   ?? throw new JsonSerializationException("Failed to deserialize JSON into Page: result was null.");
+            return JsonSerializer.Deserialize<Page>(json!) ?? throw new Exception("Failed to deserialize");
         }
     }
-
-    public static class Serialize
-    {
-        public static string? ToJson(this Page self) => JsonConvert.SerializeObject(self, Converter.Settings);
-    }
-
-    internal static class Converter
-    {
-        public static readonly JsonSerializerSettings Settings = new JsonSerializerSettings
-        {
-            MetadataPropertyHandling = MetadataPropertyHandling.Ignore,
-            DateParseHandling = DateParseHandling.None,
-            Converters =
-            {
-                new IsoDateTimeConverter { DateTimeStyles = DateTimeStyles.AssumeUniversal }
-            },
-        };
-    }
-
 
 }
